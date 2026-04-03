@@ -89,6 +89,7 @@ def detect_document_contour(image):
 
         for contour in contours[:20]:
             area = cv2.contourArea(contour)
+
             if area < image_area * 0.15:
                 continue
 
@@ -112,68 +113,60 @@ def rotate_if_needed(warped):
 
 def crop_likely_document_area(image):
     """
-    Fallback crop:
-    يحاول استخراج أكبر منطقة تشبه الورقة باستخدام مستطيل خارجي
-    بدل الاقتصاص على الصورة كاملة.
+    Stronger fallback:
+    tries to find the largest external contour and crop it using minAreaRect,
+    which works better for tilted documents than a normal bounding rectangle.
     """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # تمويه خفيف
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    # عتبة لإظهار الورقة كمنطقة كبيرة
-    _, thresh = cv2.threshold(blur, 180, 255, cv2.THRESH_BINARY)
+    edged = cv2.Canny(blur, 30, 120)
+    kernel = np.ones((5, 5), np.uint8)
+    edged = cv2.dilate(edged, kernel, iterations=2)
+    edged = cv2.erode(edged, kernel, iterations=1)
 
-    kernel = np.ones((7, 7), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-    thresh = cv2.dilate(thresh, kernel, iterations=1)
-
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(edged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return image
 
     h, w = image.shape[:2]
     image_area = h * w
 
-    best_rect = None
+    best_contour = None
     best_area = 0
 
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area < image_area * 0.10:
+        if area < image_area * 0.12:
             continue
+        if area > best_area:
+            best_area = area
+            best_contour = contour
 
-        x, y, cw, ch = cv2.boundingRect(contour)
-
-        # استبعاد الأشكال الغريبة جدًا
-        if cw < w * 0.25 or ch < h * 0.25:
-            continue
-
-        rect_area = cw * ch
-        if rect_area > best_area:
-            best_area = rect_area
-            best_rect = (x, y, cw, ch)
-
-    if best_rect is None:
+    if best_contour is None:
         return image
 
-    x, y, cw, ch = best_rect
+    rect = cv2.minAreaRect(best_contour)
+    box = cv2.boxPoints(rect)
+    box = np.array(box, dtype="float32")
 
-    # هامش أصغر جداً حول المستند لاستخراج محتوى المستند فقط
-    margin_x = max(0, int(cw * 0.01))  # 1% بدل 3%
-    margin_y = max(0, int(ch * 0.01))  # 1% بدل 3%
+    try:
+        warped = four_point_transform(image, box)
+        warped = rotate_if_needed(warped)
+        return warped
+    except Exception:
+        x, y, cw, ch = cv2.boundingRect(best_contour)
+        margin_x = int(cw * 0.03)
+        margin_y = int(ch * 0.03)
 
-    x1 = max(0, x + margin_x)
-    y1 = max(0, y + margin_y)
-    x2 = min(w, x + cw - margin_x)
-    y2 = min(h, y + ch - margin_y)
+        x1 = max(0, x - margin_x)
+        y1 = max(0, y - margin_y)
+        x2 = min(w, x + cw + margin_x)
+        y2 = min(h, y + ch + margin_y)
 
-    # التأكد من أن الإحداثيات صحيحة
-    if x2 <= x1 or y2 <= y1:
-        return image
-
-    cropped = image[y1:y2, x1:x2]
-    return cropped
+        cropped = image[y1:y2, x1:x2]
+        cropped = rotate_if_needed(cropped)
+        return cropped
 
 
 def scan_document_from_array(image):
@@ -194,9 +187,7 @@ def scan_document_from_array(image):
             "message": None
         }
 
-    # fallback: قص المنطقة المحتملة للمستند فقط
     cropped = crop_likely_document_area(original)
-    cropped = rotate_if_needed(cropped)
     enhanced, scanned = enhance_document(cropped)
 
     return {
