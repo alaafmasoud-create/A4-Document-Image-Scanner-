@@ -201,7 +201,7 @@ def smooth_signal(arr, k=21):
     return np.convolve(arr, kernel, mode="same")
 
 
-def light_trim(image, threshold=215, pad=3):
+def light_trim(image, threshold=208, pad=5):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
