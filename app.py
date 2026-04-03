@@ -420,7 +420,15 @@ if uploaded_files:
                 st.error(f"Error: {e}")
 
     else:
-        uploaded_file = uploaded_files[0]
+        selected_file_name = st.selectbox(
+            "Select image for manual mode",
+            [file.name for file in uploaded_files]
+        )
+
+        uploaded_file = next(
+            file for file in uploaded_files if file.name == selected_file_name
+        )
+
         upload_key = f"{uploaded_file.name}_{uploaded_file.size}"
 
         if st.session_state.last_uploaded_key != upload_key:
