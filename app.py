@@ -24,14 +24,11 @@ def four_point_transform(image, pts):
 
     width_a = np.linalg.norm(br - bl)
     width_b = np.linalg.norm(tr - tl)
-    max_width = max(int(width_a), int(width_b))
+    max_width = max(int(width_a), int(width_b), 1)
 
     height_a = np.linalg.norm(tr - br)
     height_b = np.linalg.norm(tl - bl)
-    max_height = max(int(height_a), int(height_b))
-
-    max_width = max(max_width, 1)
-    max_height = max(max_height, 1)
+    max_height = max(int(height_a), int(height_b), 1)
 
     dst = np.array([
         [0, 0],
@@ -46,49 +43,94 @@ def four_point_transform(image, pts):
     return warped
 
 
-def find_best_document_contour(contours, img_shape):
-    img_h, img_w = img_shape[:2]
-    img_area = img_h * img_w
+def polygon_area(pts):
+    pts = pts.reshape((-1, 1, 2)).astype(np.float32)
+    return cv2.contourArea(pts)
 
-    best_quad = None
-    best_score = -1
 
-    for c in contours:
+def contour_to_quad(contour):
+    peri = cv2.arcLength(contour, True)
+    approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+
+    if len(approx) == 4:
+        return approx.reshape(4, 2).astype(np.float32)
+
+    rect = cv2.minAreaRect(contour)
+    box = cv2.boxPoints(rect)
+    return box.astype(np.float32)
+
+
+def expand_quad(pts, img_shape, scale=1.04):
+    h, w = img_shape[:2]
+    center = np.mean(pts, axis=0)
+    expanded = center + (pts - center) * scale
+
+    expanded[:, 0] = np.clip(expanded[:, 0], 0, w - 1)
+    expanded[:, 1] = np.clip(expanded[:, 1], 0, h - 1)
+
+    return expanded.astype(np.float32)
+
+
+def score_quad(pts, img_shape):
+    h, w = img_shape[:2]
+    img_area = h * w
+
+    rect = order_points(pts)
+    (tl, tr, br, bl) = rect
+
+    width = max(np.linalg.norm(tr - tl), np.linalg.norm(br - bl))
+    height = max(np.linalg.norm(bl - tl), np.linalg.norm(br - tr))
+
+    if min(width, height) < 80:
+        return -1
+
+    area = polygon_area(rect)
+    area_ratio = area / img_area
+
+    if area_ratio < 0.20:
+        return -1
+
+    aspect = max(width, height) / max(1.0, min(width, height))
+    if aspect > 2.2:
+        return -1
+
+    # ورق A4 تقريبًا
+    paper_ratio = 1.414
+    ratio_bonus = 1.0 - min(abs(aspect - paper_ratio), 1.0)
+
+    img_center = np.array([w / 2, h / 2], dtype=np.float32)
+    quad_center = np.mean(rect, axis=0)
+    center_dist = np.linalg.norm(quad_center - img_center) / np.linalg.norm(img_center)
+    center_bonus = 1.0 - min(center_dist, 1.0)
+
+    score = (area_ratio * 100.0) + (ratio_bonus * 15.0) + (center_bonus * 5.0)
+    return score
+
+
+def get_candidate_quads_from_contours(contours, img_shape, max_count=15):
+    h, w = img_shape[:2]
+    img_area = h * w
+
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    quads = []
+
+    for c in contours[:max_count]:
         area = cv2.contourArea(c)
-        if area < 0.15 * img_area:
+        if area < 0.05 * img_area:
             continue
 
-        peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        quad = contour_to_quad(c)
+        quads.append(quad)
 
-        if len(approx) != 4:
-            continue
-
-        x, y, w, h = cv2.boundingRect(approx)
-        if w < 50 or h < 50:
-            continue
-
-        aspect = max(w, h) / max(1, min(w, h))
-
-        # استبعاد الأشرطة الرفيعة مثل عنوان الصفحة
-        if aspect > 2.2:
-            continue
-
-        # نفضّل الأشكال الرباعية الكبيرة
-        score = area
-
-        if score > best_score:
-            best_score = score
-            best_quad = approx
-
-    return best_quad
+    return quads
 
 
 def detect_document(image):
     original = image.copy()
 
-    max_h = 1400
+    # تصغير للصورة لتسريع المعالجة مع حفظ النسبة لإرجاع الإحداثيات
     ratio = 1.0
+    max_h = 1400
     if image.shape[0] > max_h:
         ratio = image.shape[0] / max_h
         new_w = int(image.shape[1] / ratio)
@@ -97,79 +139,77 @@ def detect_document(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (7, 7), 0)
 
-    candidate_contours = []
+    candidate_quads = []
 
-    # الطريقة 1: Canny + Morphology
-    edged = cv2.Canny(blurred, 30, 120)
-    kernel1 = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
-    edged = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel1, iterations=2)
-    edged = cv2.dilate(edged, kernel1, iterations=1)
-
-    contours1 = cv2.findContours(edged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours1 = contours1[0] if len(contours1) == 2 else contours1[1]
-    candidate_contours.extend(contours1)
-
-    # الطريقة 2: Adaptive Threshold لعزل الورقة الفاتحة
-    thr = cv2.adaptiveThreshold(
-        blurred,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        21,
-        15
+    # 1) أفضل طريقة لهذه الحالة: عزل الورقة الفاتحة عن الخلفية
+    _, bright_mask = cv2.threshold(
+        blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
 
-    # بما أن الورقة عادة فاتحة، نعكس حتى تصبح منطقة الورقة واضحة أكثر
-    thr_inv = 255 - thr
-    kernel2 = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
-    thr_inv = cv2.morphologyEx(thr_inv, cv2.MORPH_CLOSE, kernel2, iterations=2)
-    thr_inv = cv2.dilate(thr_inv, kernel2, iterations=1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+    bright_mask = cv2.morphologyEx(bright_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    bright_mask = cv2.dilate(bright_mask, kernel, iterations=1)
+    bright_mask = cv2.erode(bright_mask, kernel, iterations=1)
 
-    contours2 = cv2.findContours(thr_inv, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours2 = contours2[0] if len(contours2) == 2 else contours2[1]
-    candidate_contours.extend(contours2)
+    contours_bright = cv2.findContours(
+        bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+    contours_bright = contours_bright[0] if len(contours_bright) == 2 else contours_bright[1]
+    candidate_quads.extend(get_candidate_quads_from_contours(contours_bright, image.shape))
 
-    # نحاول إيجاد أفضل رباعي يمثل كامل الصفحة
-    best_quad = find_best_document_contour(candidate_contours, image.shape)
+    # 2) طريقة احتياطية بالحواف
+    edges = cv2.Canny(blurred, 30, 120)
+    kernel2 = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel2, iterations=2)
+    edges = cv2.dilate(edges, kernel2, iterations=1)
 
-    # fallback: إذا لم نجد رباعياً واضحًا، نأخذ أكبر contour خارجي منطقي
+    contours_edges = cv2.findContours(
+        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+    contours_edges = contours_edges[0] if len(contours_edges) == 2 else contours_edges[1]
+    candidate_quads.extend(get_candidate_quads_from_contours(contours_edges, image.shape))
+
+    if not candidate_quads:
+        raise ValueError("لم أتمكن من اكتشاف حدود المستند كاملًا.")
+
+    best_quad = None
+    best_score = -1
+
+    for quad in candidate_quads:
+        score = score_quad(quad, image.shape)
+        if score > best_score:
+            best_score = score
+            best_quad = quad
+
     if best_quad is None:
-        if not candidate_contours:
-            raise ValueError("لم أتمكن من اكتشاف المستند كاملًا.")
+        raise ValueError("لم أتمكن من تحديد المستند كاملًا.")
 
-        img_h, img_w = image.shape[:2]
-        img_area = img_h * img_w
+    # نوسّع الحدود قليلًا حتى لا تُقص الترويسة أو آخر الصفحة
+    best_quad = expand_quad(best_quad, image.shape, scale=1.04)
 
-        large_contours = [c for c in candidate_contours if cv2.contourArea(c) > 0.12 * img_area]
+    # إعادة الإحداثيات لحجم الصورة الأصلي
+    best_quad = best_quad * ratio
 
-        if not large_contours:
-            raise ValueError("لم أتمكن من اكتشاف المستند كاملًا.")
-
-        c = max(large_contours, key=cv2.contourArea)
-        rect = cv2.minAreaRect(c)
-        box = cv2.boxPoints(rect)
-        best_quad = np.array(box, dtype="float32").reshape(4, 1, 2)
-
-    pts = best_quad.reshape(4, 2) * ratio
-    warped = four_point_transform(original, pts)
-
+    warped = four_point_transform(original, best_quad)
     return warped
 
 
-def trim_black_borders(image):
-    if len(image.shape) == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image.copy()
-
-    _, thresh = cv2.threshold(gray, 8, 255, cv2.THRESH_BINARY)
-    coords = cv2.findNonZero(thresh)
+def light_trim(image, threshold=8, pad=12):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, mask = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
+    coords = cv2.findNonZero(mask)
 
     if coords is None:
         return image
 
     x, y, w, h = cv2.boundingRect(coords)
-    return image[y:y + h, x:x + w]
+
+    x = max(x - pad, 0)
+    y = max(y - pad, 0)
+    x2 = min(x + w + 2 * pad, image.shape[1])
+    y2 = min(y + h + 2 * pad, image.shape[0])
+
+    return image[y:y2, x:x2]
 
 
 def process_document(file_bytes):
@@ -180,7 +220,7 @@ def process_document(file_bytes):
         raise ValueError("تعذر قراءة الصورة المرفوعة.")
 
     warped = detect_document(img)
-    warped = trim_black_borders(warped)
+    warped = light_trim(warped)
 
     return warped
 
@@ -188,7 +228,7 @@ def process_document(file_bytes):
 st.set_page_config(page_title="Smart Document Scanner", layout="centered")
 
 st.title("Smart Document Scanner")
-st.write("ارفع صورة المستند، وسيظهر لك المستند كاملًا بشكل مستقيم.")
+st.write("ارفع صورة المستند وسيظهر لك المستند كاملًا بشكل مستقيم.")
 
 uploaded_file = st.file_uploader(
     "Upload image",
