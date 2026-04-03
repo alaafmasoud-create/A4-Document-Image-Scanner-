@@ -19,68 +19,41 @@ if uploaded_file is not None:
     if result["message"]:
         st.warning(result["message"])
 
-    if result["mode"] == "detected":
-        col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns(3)
 
-        with col1:
-            st.image(
-                cv2.cvtColor(result["original"], cv2.COLOR_BGR2RGB),
-                caption="Original Image",
-                use_container_width=True
-            )
+    with col1:
+        st.image(
+            cv2.cvtColor(result["original"], cv2.COLOR_BGR2RGB),
+            caption="Original Image",
+            use_container_width=True
+        )
 
-        with col2:
+    with col2:
+        if result["warped"] is not None and len(result["warped"].shape) == 3:
             st.image(
                 cv2.cvtColor(result["warped"], cv2.COLOR_BGR2RGB),
-                caption="Straightened Document",
+                caption="Straightened / Cropped Document",
                 use_container_width=True
             )
-
-        with col3:
-            st.image(
-                result["scanned"],
-                caption="Scanned Output",
-                use_container_width=True
-            )
-
-        success, buffer = cv2.imencode(".png", result["scanned"])
-        if success:
-            st.download_button(
-                label="Download Scanned Image",
-                data=buffer.tobytes(),
-                file_name="scanned_document.png",
-                mime="image/png"
-            )
-
-    else:
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.image(
-                cv2.cvtColor(result["original"], cv2.COLOR_BGR2RGB),
-                caption="Original Image",
-                use_container_width=True
-            )
-
-        with col2:
+        else:
             st.image(
                 result["enhanced"],
                 caption="Enhanced Grayscale",
                 use_container_width=True
             )
 
-        with col3:
-            st.image(
-                result["scanned"],
-                caption="Fallback Scan",
-                use_container_width=True
-            )
+    with col3:
+        st.image(
+            result["scanned"],
+            caption="Scanned Output",
+            use_container_width=True
+        )
 
-        success, buffer = cv2.imencode(".png", result["scanned"])
-        if success:
-            st.download_button(
-                label="Download Enhanced Image",
-                data=buffer.tobytes(),
-                file_name="enhanced_document.png",
-                mime="image/png"
-            )
+    success, buffer = cv2.imencode(".png", result["scanned"])
+    if success:
+        st.download_button(
+            label="Download Scanned Image",
+            data=buffer.tobytes(),
+            file_name="scanned_document.png",
+            mime="image/png"
+        )
