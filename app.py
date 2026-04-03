@@ -185,7 +185,7 @@ def detect_document(image):
         raise ValueError("لم أتمكن من تحديد المستند كاملًا.")
 
     # نوسّع الحدود قليلًا حتى لا تُقص الترويسة أو آخر الصفحة
-    best_quad = expand_quad(best_quad, image.shape, scale=1.02)
+    best_quad = expand_quad(best_quad, image.shape, scale=1.01)
 
     # إعادة الإحداثيات لحجم الصورة الأصلي
     best_quad = best_quad * ratio
