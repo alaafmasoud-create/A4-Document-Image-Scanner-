@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 
 
-def process_receipt(file_bytes):
+def process_document(file_bytes):
     # Convert uploaded file to OpenCV image
     file_array = np.asarray(bytearray(file_bytes), dtype=np.uint8)
     img = cv2.imdecode(file_array, cv2.IMREAD_COLOR)
@@ -27,35 +27,25 @@ def process_receipt(file_bytes):
         if area > 20:
             cv2.drawContours(cimg, [cntr], 0, 255, 1)
 
-    # Find points for hull
+    # Collect points for convex hull
     points = np.column_stack(np.where(cimg.transpose() > 0))
     if len(points) == 0:
-        raise ValueError("No valid contour points found. Try another image.")
+        raise ValueError("No valid document detected in the image.")
 
     hull = cv2.convexHull(points)
 
-    # Hull image
-    himg = img.copy()
-    cv2.polylines(himg, [hull], True, (0, 0, 255), 1)
-
-    # Mask
+    # Create filled mask from hull
     mask = np.zeros_like(cimg, dtype=np.uint8)
     cv2.fillPoly(mask, [hull], 255)
 
-    # Apply mask
-    mimg = cv2.bitwise_and(img, img, mask=mask)
+    # Mask the document only
+    masked_img = cv2.bitwise_and(img, img, mask=mask)
 
-    # Rotated rectangle
+    # Get rotated rectangle
     rotrect = cv2.minAreaRect(hull)
     (center), (width, height), angle = rotrect
-    box = cv2.boxPoints(rotrect)
-    boxpts = np.intp(box)
 
-    # Rectangle image
-    rimg = img.copy()
-    cv2.drawContours(rimg, [boxpts], 0, (0, 0, 255), 1)
-
-    # Angle correction
+    # Correct angle
     if angle < -45:
         angle = -(90 + angle)
     else:
@@ -66,10 +56,11 @@ def process_receipt(file_bytes):
 
     neg_angle = -angle
 
-    # Rotate
+    # Rotate image and mask with the same matrix
     M = cv2.getRotationMatrix2D(center, neg_angle, scale=1.0)
-    result = cv2.warpAffine(
-        mimg,
+
+    rotated_img = cv2.warpAffine(
+        masked_img,
         M,
         (ww, hh),
         flags=cv2.INTER_CUBIC,
@@ -77,22 +68,39 @@ def process_receipt(file_bytes):
         borderValue=(0, 0, 0),
     )
 
-    return {
-        "original": img,
-        "edges": canny,
-        "filtered_edges": cimg,
-        "hull": himg,
-        "mask": mask,
-        "rotated_rect": rimg,
-        "result": result,
-        "angle": neg_angle,
-    }
+    rotated_mask = cv2.warpAffine(
+        mask,
+        M,
+        (ww, hh),
+        flags=cv2.INTER_NEAREST,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+
+    # Crop exactly around the rotated document
+    coords = cv2.findNonZero(rotated_mask)
+    if coords is None:
+        raise ValueError("Could not crop the document after rotation.")
+
+    x, y, w, h = cv2.boundingRect(coords)
+    cropped = rotated_img[y:y+h, x:x+w]
+
+    # Optional extra trim to remove tiny black borders
+    gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 5, 255, cv2.THRESH_BINARY)
+    coords2 = cv2.findNonZero(thresh)
+
+    if coords2 is not None:
+        x2, y2, w2, h2 = cv2.boundingRect(coords2)
+        cropped = cropped[y2:y2+h2, x2:x2+w2]
+
+    return cropped
 
 
-st.set_page_config(page_title="Smart Receipt Rectifier", layout="wide")
+st.set_page_config(page_title="Document Straightener", layout="centered")
 
-st.title("Smart Receipt Rectifier")
-st.write("Upload an image of a receipt or document to detect and straighten it.")
+st.title("Document Straightener")
+st.write("Upload a document image and get only the straightened document.")
 
 uploaded_file = st.file_uploader(
     "Upload image",
@@ -102,34 +110,10 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None:
     try:
         file_bytes = uploaded_file.read()
-        result = process_receipt(file_bytes)
+        result = process_document(file_bytes)
 
-        st.success(f"Processing completed. Unrotation angle: {result['angle']:.2f}°")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.subheader("Original")
-            st.image(cv2.cvtColor(result["original"], cv2.COLOR_BGR2RGB), use_container_width=True)
-
-            st.subheader("Edges")
-            st.image(result["edges"], use_container_width=True, clamp=True)
-
-            st.subheader("Filtered Edges")
-            st.image(result["filtered_edges"], use_container_width=True, clamp=True)
-
-        with col2:
-            st.subheader("Convex Hull")
-            st.image(cv2.cvtColor(result["hull"], cv2.COLOR_BGR2RGB), use_container_width=True)
-
-            st.subheader("Rotated Rectangle")
-            st.image(cv2.cvtColor(result["rotated_rect"], cv2.COLOR_BGR2RGB), use_container_width=True)
-
-            st.subheader("Mask")
-            st.image(result["mask"], use_container_width=True, clamp=True)
-
-        st.subheader("Final Straightened Result")
-        st.image(cv2.cvtColor(result["result"], cv2.COLOR_BGR2RGB), use_container_width=True)
+        st.subheader("Final Result")
+        st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), use_container_width=True)
 
     except Exception as e:
         st.error(f"Error: {e}")
