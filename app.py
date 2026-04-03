@@ -5,81 +5,6 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 
 
 # -----------------------------
-# Page style
-# -----------------------------
-st.set_page_config(page_title="A4 Document Scanner", layout="wide")
-
-st.markdown("""
-<style>
-    .stApp {
-        background: linear-gradient(180deg, #f6f9fc 0%, #edf3f8 100%);
-    }
-
-    .block-container {
-        padding-top: 1.8rem;
-        padding-bottom: 2rem;
-        max-width: 1200px;
-    }
-
-    h1 {
-        color: #0f172a;
-        font-weight: 800;
-        margin-bottom: 0.4rem;
-    }
-
-    .stRadio > div {
-        background: white;
-        padding: 12px 16px;
-        border-radius: 14px;
-        border: 1px solid rgba(148, 163, 184, 0.22);
-        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
-    }
-
-    .stFileUploader {
-        background: white;
-        padding: 14px 16px 8px 16px;
-        border-radius: 16px;
-        border: 1px solid rgba(148, 163, 184, 0.22);
-        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
-    }
-
-    .stButton > button,
-    .stDownloadButton > button {
-        width: 100%;
-        border-radius: 12px !important;
-        font-weight: 600 !important;
-        padding: 0.72rem 1rem !important;
-    }
-
-    .stImage {
-        background: white;
-        padding: 10px;
-        border-radius: 18px;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-    }
-
-    .stAlert {
-        border-radius: 14px;
-    }
-
-    div[role="radiogroup"] {
-        gap: 16px;
-    }
-
-    .nice-box {
-        background: white;
-        padding: 18px;
-        border-radius: 18px;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-        margin-bottom: 16px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-
-# -----------------------------
 # Geometry helpers
 # -----------------------------
 def order_points(pts):
@@ -437,23 +362,19 @@ def image_to_download_bytes(image_bgr, filename="final_result.png"):
 # -----------------------------
 # Streamlit UI
 # -----------------------------
-st.markdown('<div class="nice-box">', unsafe_allow_html=True)
+st.set_page_config(page_title="A4 Document Scanner", layout="wide")
+
 st.title("A4 Document Scanner")
 st.write(
     "Upload an image of an A4 document. Use the default automatic mode, or manually adjust the corners for a more accurate crop."
 )
-st.markdown('</div>', unsafe_allow_html=True)
 
-top_col1, top_col2 = st.columns([1, 1.2])
+mode = st.radio("Mode", ["Auto", "Manual"], horizontal=True)
 
-with top_col1:
-    mode = st.radio("Mode", ["Auto", "Manual"], horizontal=True)
-
-with top_col2:
-    uploaded_file = st.file_uploader(
-        "Upload image",
-        type=["jpg", "jpeg", "png", "bmp", "webp"]
-    )
+uploaded_file = st.file_uploader(
+    "Upload image",
+    type=["jpg", "jpeg", "png", "bmp", "webp"]
+)
 
 if "manual_points_preview" not in st.session_state:
     st.session_state.manual_points_preview = []
@@ -481,8 +402,6 @@ if uploaded_file is not None:
 
     if mode == "Auto":
         try:
-            st.markdown('<div class="nice-box">', unsafe_allow_html=True)
-
             result = detect_document_auto(original)
             st.image(
                 cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
@@ -499,8 +418,6 @@ if uploaded_file is not None:
                     mime="image/png"
                 )
 
-            st.markdown('</div>', unsafe_allow_html=True)
-
         except Exception as e:
             st.error(f"Error: {e}")
 
@@ -516,36 +433,29 @@ if uploaded_file is not None:
             st.session_state.manual_points_preview
         )
 
-        left_col, right_col = st.columns([1.05, 0.95])
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("Reset points"):
+                st.session_state.manual_points_preview = []
+                st.session_state.manual_points_original = []
+                st.session_state.last_click = None
+                st.rerun()
 
-        with left_col:
-            st.markdown('<div class="nice-box">', unsafe_allow_html=True)
+        with col_btn2:
+            if st.button("Undo last point"):
+                if st.session_state.manual_points_preview:
+                    st.session_state.manual_points_preview.pop()
+                if st.session_state.manual_points_original:
+                    st.session_state.manual_points_original.pop()
+                st.session_state.last_click = None
+                st.rerun()
 
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("Reset points"):
-                    st.session_state.manual_points_preview = []
-                    st.session_state.manual_points_original = []
-                    st.session_state.last_click = None
-                    st.rerun()
+        st.subheader("Click on the 4 corners")
 
-            with col_btn2:
-                if st.button("Undo last point"):
-                    if st.session_state.manual_points_preview:
-                        st.session_state.manual_points_preview.pop()
-                    if st.session_state.manual_points_original:
-                        st.session_state.manual_points_original.pop()
-                    st.session_state.last_click = None
-                    st.rerun()
-
-            st.subheader("Click on the 4 corners")
-
-            clicked = streamlit_image_coordinates(
-                preview_with_points,
-                key="manual_click_image"
-            )
-
-            st.markdown('</div>', unsafe_allow_html=True)
+        clicked = streamlit_image_coordinates(
+            preview_with_points,
+            key="manual_click_image"
+        )
 
         if clicked is not None:
             current_click = (clicked["x"], clicked["y"])
@@ -565,35 +475,27 @@ if uploaded_file is not None:
                 st.session_state.last_click = current_click
                 st.rerun()
 
-        with right_col:
-            st.markdown('<div class="nice-box">', unsafe_allow_html=True)
+        st.write(f"Points selected: {len(st.session_state.manual_points_original)}/4")
+        for i, p in enumerate(st.session_state.manual_points_original, start=1):
+            st.write(f"{i}: x={p[0]}, y={p[1]}")
 
-            if len(st.session_state.manual_points_original) == 4:
-                try:
-                    result = detect_document_manual(original, st.session_state.manual_points_original)
-                    st.image(
-                        cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
-                        caption="Manual Result",
-                        use_container_width=True
+        if len(st.session_state.manual_points_original) == 4:
+            try:
+                result = detect_document_manual(original, st.session_state.manual_points_original)
+                st.image(
+                    cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
+                    caption="Manual Result",
+                    use_container_width=True
+                )
+
+                download_bytes = image_to_download_bytes(result)
+                if download_bytes is not None:
+                    st.download_button(
+                        label="Download Final Result",
+                        data=download_bytes,
+                        file_name="final_result.png",
+                        mime="image/png"
                     )
 
-                    download_bytes = image_to_download_bytes(result)
-                    if download_bytes is not None:
-                        st.download_button(
-                            label="Download Final Result",
-                            data=download_bytes,
-                            file_name="final_result.png",
-                            mime="image/png"
-                        )
-
-                except Exception as e:
-                    st.error(f"Error: {e}")
-            else:
-                st.info("Select 4 points to generate the final result.")
-
-            st.markdown('</div>', unsafe_allow_html=True)
-
-else:
-    st.markdown('<div class="nice-box">', unsafe_allow_html=True)
-    st.info("Upload image")
-    st.markdown('</div>', unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Error: {e}")
