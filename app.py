@@ -60,6 +60,7 @@ def contour_to_quad(contour):
     return box.astype(np.float32)
 
 
+
 def expand_quad(pts, img_shape, scale=1.04):
     h, w = img_shape[:2]
     center = np.mean(pts, axis=0)
@@ -185,7 +186,7 @@ def detect_document(image):
         raise ValueError("لم أتمكن من تحديد المستند كاملًا.")
 
     # نوسّع الحدود قليلًا حتى لا تُقص الترويسة أو آخر الصفحة
-    best_quad = expand_quad(best_quad, image.shape, scale=1.01)
+    best_quad = expand_quad(best_quad, image.shape, scale=1.00)
 
     # إعادة الإحداثيات لحجم الصورة الأصلي
     best_quad = best_quad * ratio
