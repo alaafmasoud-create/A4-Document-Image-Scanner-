@@ -70,7 +70,6 @@ def detect_document_contour(image):
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    # جرّب طريقتين للحواف
     edged1 = cv2.Canny(blur, 50, 150)
     edged2 = cv2.Canny(blur, 30, 120)
 
@@ -90,8 +89,6 @@ def detect_document_contour(image):
 
         for contour in contours[:20]:
             area = cv2.contourArea(contour)
-
-            # نتجاهل الصغير جدًا
             if area < image_area * 0.15:
                 continue
 
@@ -108,10 +105,71 @@ def detect_document_contour(image):
 
 def rotate_if_needed(warped):
     h, w = warped.shape[:2]
-    # لو خرجت الصفحة أفقية بشكل غير مرغوب، نخليها عمودية
     if w > h:
         warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
     return warped
+
+
+def crop_likely_document_area(image):
+    """
+    Fallback crop:
+    يحاول استخراج أكبر منطقة تشبه الورقة باستخدام مستطيل خارجي
+    بدل الاقتصاص على الصورة كاملة.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # تمويه خفيف
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # عتبة لإظهار الورقة كمنطقة كبيرة
+    _, thresh = cv2.threshold(blur, 180, 255, cv2.THRESH_BINARY)
+
+    kernel = np.ones((7, 7), np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
+    thresh = cv2.dilate(thresh, kernel, iterations=1)
+
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return image
+
+    h, w = image.shape[:2]
+    image_area = h * w
+
+    best_rect = None
+    best_area = 0
+
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < image_area * 0.10:
+            continue
+
+        x, y, cw, ch = cv2.boundingRect(contour)
+
+        # استبعاد الأشكال الغريبة جدًا
+        if cw < w * 0.25 or ch < h * 0.25:
+            continue
+
+        rect_area = cw * ch
+        if rect_area > best_area:
+            best_area = rect_area
+            best_rect = (x, y, cw, ch)
+
+    if best_rect is None:
+        return image
+
+    x, y, cw, ch = best_rect
+
+    # هامش بسيط حول المستند
+    margin_x = int(cw * 0.03)
+    margin_y = int(ch * 0.03)
+
+    x1 = max(0, x - margin_x)
+    y1 = max(0, y - margin_y)
+    x2 = min(w, x + cw + margin_x)
+    y2 = min(h, y + ch + margin_y)
+
+    cropped = image[y1:y2, x1:x2]
+    return cropped
 
 
 def scan_document_from_array(image):
@@ -132,13 +190,16 @@ def scan_document_from_array(image):
             "message": None
         }
 
-    # fallback: إذا لم يكتشف الورقة، حسّن الصورة كاملة بدل الفشل
-    enhanced, scanned = enhance_document(original)
+    # fallback: قص المنطقة المحتملة للمستند فقط
+    cropped = crop_likely_document_area(original)
+    cropped = rotate_if_needed(cropped)
+    enhanced, scanned = enhance_document(cropped)
+
     return {
         "mode": "fallback",
         "original": original,
-        "warped": None,
+        "warped": cropped,
         "enhanced": enhanced,
         "scanned": scanned,
-        "message": "Full document was not detected, so a full-image enhanced scan is shown instead."
+        "message": "Full document was not detected, so the app cropped the most likely document area and enhanced it."
     }
