@@ -155,7 +155,7 @@ def build_candidate_masks(image):
     except Exception:
         pass
 
-    # Bright mask
+    # Bright paper mask
     _, bright = cv2.threshold(gray_eq, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     bright = clear_border_connected(bright)
 
@@ -294,27 +294,36 @@ def detect_document_auto(original):
 # -----------------------------
 # Manual mode helpers
 # -----------------------------
-def draw_points(image, points, radius=10):
-    canvas = image.copy()
-    rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
+def make_preview_for_clicks(image, max_width=1000, max_height=1400):
+    h, w = image.shape[:2]
+    scale = min(max_width / w, max_height / h, 1.0)
+    new_w = max(1, int(w * scale))
+    new_h = max(1, int(h * scale))
+    resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    return rgb, scale
 
-    for idx, (x, y) in enumerate(points):
-        cv2.circle(rgb, (int(x), int(y)), radius, (255, 0, 0), -1)
+
+def draw_points_on_preview(preview_rgb, points_preview, radius=8):
+    canvas = preview_rgb.copy()
+
+    for idx, (x, y) in enumerate(points_preview):
+        cv2.circle(canvas, (int(x), int(y)), radius, (255, 0, 0), -1)
         cv2.putText(
-            rgb,
+            canvas,
             str(idx + 1),
-            (int(x) + 12, int(y) - 12),
+            (int(x) + 10, int(y) - 10),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,
             (255, 0, 0),
             2,
             cv2.LINE_AA
         )
-    return rgb
+    return canvas
 
 
-def detect_document_manual(original, points):
-    pts = np.array(points, dtype=np.float32)
+def detect_document_manual(original, points_original):
+    pts = np.array(points_original, dtype=np.float32)
     warped = four_point_transform(original, pts)
     warped = trim_black_frame(warped)
     return warped
@@ -346,7 +355,7 @@ def decode_uploaded_image(file_bytes):
 # -----------------------------
 # Streamlit UI
 # -----------------------------
-st.set_page_config(page_title="A4 Document Scanner", layout="centered")
+st.set_page_config(page_title="A4 Document Scanner", layout="wide")
 
 st.title("A4 Document Scanner")
 st.write("ارفع صورة ورقة A4. يمكنك استخدام الوضع التلقائي أو تحديد الزوايا يدويًا بالنقر 4 مرات.")
@@ -358,14 +367,28 @@ uploaded_file = st.file_uploader(
     type=["jpg", "jpeg", "png", "bmp", "webp"]
 )
 
-if "manual_points" not in st.session_state:
-    st.session_state.manual_points = []
+if "manual_points_preview" not in st.session_state:
+    st.session_state.manual_points_preview = []
+
+if "manual_points_original" not in st.session_state:
+    st.session_state.manual_points_original = []
 
 if "last_click" not in st.session_state:
     st.session_state.last_click = None
 
+if "last_uploaded_key" not in st.session_state:
+    st.session_state.last_uploaded_key = None
+
 if uploaded_file is not None:
-    file_bytes = uploaded_file.read()
+    upload_key = f"{uploaded_file.name}_{uploaded_file.size}"
+
+    if st.session_state.last_uploaded_key != upload_key:
+        st.session_state.manual_points_preview = []
+        st.session_state.manual_points_original = []
+        st.session_state.last_click = None
+        st.session_state.last_uploaded_key = upload_key
+
+    file_bytes = uploaded_file.getvalue()
     original = decode_uploaded_image(file_bytes)
 
     if mode == "Auto":
@@ -382,40 +405,74 @@ if uploaded_file is not None:
     else:
         st.info("انقر بالترتيب: أعلى يسار، أعلى يمين، أسفل يمين، أسفل يسار.")
 
-        col_a, col_b = st.columns([1, 1])
+        preview_rgb, preview_scale = make_preview_for_clicks(
+            original,
+            max_width=1000,
+            max_height=1400
+        )
 
-        with col_a:
+        preview_with_points = draw_points_on_preview(
+            preview_rgb,
+            st.session_state.manual_points_preview
+        )
+
+        st.subheader("Preview")
+        st.image(preview_rgb, caption="الصورة كاملة للمعاينة", use_container_width=True)
+
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
             if st.button("Reset points"):
-                st.session_state.manual_points = []
+                st.session_state.manual_points_preview = []
+                st.session_state.manual_points_original = []
                 st.session_state.last_click = None
                 st.rerun()
 
-            preview_rgb = draw_points(original, st.session_state.manual_points)
-            clicked = streamlit_image_coordinates(
-                preview_rgb,
-                key="manual_click_image"
-            )
+        with col_btn2:
+            if st.button("Undo last point"):
+                if st.session_state.manual_points_preview:
+                    st.session_state.manual_points_preview.pop()
+                if st.session_state.manual_points_original:
+                    st.session_state.manual_points_original.pop()
+                st.session_state.last_click = None
+                st.rerun()
 
-            if clicked is not None:
-                current_click = (clicked["x"], clicked["y"])
-                if st.session_state.last_click != current_click:
-                    if len(st.session_state.manual_points) < 4:
-                        st.session_state.manual_points.append(current_click)
-                    st.session_state.last_click = current_click
-                    st.rerun()
+        st.subheader("Click on the 4 corners")
+        st.write("اضغط على الزوايا الأربع فوق الصورة التالية:")
 
-        with col_b:
-            st.write(f"Points selected: {len(st.session_state.manual_points)}/4")
-            for i, p in enumerate(st.session_state.manual_points, start=1):
-                st.write(f"{i}: x={p[0]}, y={p[1]}")
+        clicked = streamlit_image_coordinates(
+            preview_with_points,
+            key="manual_click_image"
+        )
 
-            if len(st.session_state.manual_points) == 4:
-                try:
-                    result = detect_document_manual(original, st.session_state.manual_points)
-                    st.image(
-                        cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
-                        caption="Manual Result",
-                        use_container_width=True
-                    )
-                except Exception as e:
-                    st.error(f"Error: {e}")
+        if clicked is not None:
+            current_click = (clicked["x"], clicked["y"])
+
+            if st.session_state.last_click != current_click:
+                if len(st.session_state.manual_points_preview) < 4:
+                    st.session_state.manual_points_preview.append(current_click)
+
+                    ox = int(round(clicked["x"] / preview_scale))
+                    oy = int(round(clicked["y"] / preview_scale))
+
+                    ox = max(0, min(ox, original.shape[1] - 1))
+                    oy = max(0, min(oy, original.shape[0] - 1))
+
+                    st.session_state.manual_points_original.append((ox, oy))
+
+                st.session_state.last_click = current_click
+                st.rerun()
+
+        st.write(f"Points selected: {len(st.session_state.manual_points_original)}/4")
+        for i, p in enumerate(st.session_state.manual_points_original, start=1):
+            st.write(f"{i}: x={p[0]}, y={p[1]}")
+
+        if len(st.session_state.manual_points_original) == 4:
+            try:
+                result = detect_document_manual(original, st.session_state.manual_points_original)
+                st.image(
+                    cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
+                    caption="Manual Result",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"Error: {e}")
