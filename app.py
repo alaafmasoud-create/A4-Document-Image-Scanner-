@@ -465,7 +465,6 @@ st.markdown("""
     <p class="hero-subtitle">
         Sube una imagen de un documento A4. Usa el modo automático predeterminado o ajusta manualmente las esquinas para un recorte más preciso.
     </p>
-    <p class="hero-subtitle" style="margin-top: .55rem; font-weight: 700; color: #1e293b;">By Alan Masoud</p>
 </div>
 """, unsafe_allow_html=True)
 
