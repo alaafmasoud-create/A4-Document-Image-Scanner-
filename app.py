@@ -656,5 +656,6 @@ if uploaded_files:
 
             except Exception as e:
                 st.error(f"Error: {e}")
+                
 st.markdown('<div class="footer-signature">By Alan Masoud</div>', unsafe_allow_html=True)
 
