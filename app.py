@@ -124,6 +124,7 @@ def largest_non_border_component(binary_mask, min_area_ratio=0.05):
     return comp
 
 
+@st.cache_data(show_spinner=False)
 def build_candidate_masks(image):
     masks = []
 
@@ -141,7 +142,7 @@ def build_candidate_masks(image):
         bgd_model = np.zeros((1, 65), np.float64)
         fgd_model = np.zeros((1, 65), np.float64)
 
-        cv2.grabCut(image, gc_mask, rect, bgd_model, fgd_model, 4, cv2.GC_INIT_WITH_RECT)
+        cv2.grabCut(image, gc_mask, rect, bgd_model, fgd_model, 1, cv2.GC_INIT_WITH_RECT)
 
         grabcut = np.where(
             (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD),
@@ -149,7 +150,7 @@ def build_candidate_masks(image):
             0
         ).astype(np.uint8)
 
-        k = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+        k = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
         grabcut = cv2.morphologyEx(grabcut, cv2.MORPH_CLOSE, k, iterations=2)
         masks.append(("grabcut", grabcut))
     except Exception:
@@ -170,7 +171,7 @@ def build_candidate_masks(image):
 
     # Edges
     edges = cv2.Canny(gray, 40, 140)
-    k2 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    k2 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     edges = cv2.dilate(edges, k2, iterations=2)
     edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, k2, iterations=2)
     masks.append(("edges", edges))
@@ -233,10 +234,17 @@ def score_candidate(quad, img_shape, contour_area):
 # -----------------------------
 # Auto detection
 # -----------------------------
+@st.cache_data(show_spinner=False)
 def detect_document_auto(original):
-    if original.shape[0] > 1400:
-        resize_ratio = original.shape[0] / 1400.0
-        image = cv2.resize(original, (int(original.shape[1] / resize_ratio), 1400))
+    max_detect_height = 1100
+
+    if original.shape[0] > max_detect_height:
+        resize_ratio = original.shape[0] / float(max_detect_height)
+        image = cv2.resize(
+            original,
+            (int(original.shape[1] / resize_ratio), max_detect_height),
+            interpolation=cv2.INTER_AREA
+        )
     else:
         resize_ratio = 1.0
         image = original.copy()
@@ -294,6 +302,7 @@ def detect_document_auto(original):
 # -----------------------------
 # Manual mode helpers
 # -----------------------------
+@st.cache_data(show_spinner=False)
 def make_preview_for_clicks(image, max_width=1000, max_height=1400):
     h, w = image.shape[:2]
     scale = min(max_width / w, max_height / h, 1.0)
@@ -322,6 +331,7 @@ def draw_points_on_preview(preview_rgb, points_preview, radius=8):
     return canvas
 
 
+@st.cache_data(show_spinner=False)
 def detect_document_manual(original, points_original):
     pts = np.array(points_original, dtype=np.float32)
     warped = four_point_transform(original, pts)
@@ -344,6 +354,7 @@ def trim_black_frame(image):
     return image[y:y + h, x:x + w]
 
 
+@st.cache_data(show_spinner=False)
 def decode_uploaded_image(file_bytes):
     file_array = np.asarray(bytearray(file_bytes), dtype=np.uint8)
     img = cv2.imdecode(file_array, cv2.IMREAD_COLOR)
@@ -352,6 +363,7 @@ def decode_uploaded_image(file_bytes):
     return img
 
 
+@st.cache_data(show_spinner=False)
 def image_to_download_bytes(image_bgr, filename="final_result.png"):
     success, buffer = cv2.imencode(".png", image_bgr)
     if not success:
@@ -646,7 +658,7 @@ if uploaded_files:
 
         if len(st.session_state.manual_points_original) == 4:
             try:
-                result = detect_document_manual(original, st.session_state.manual_points_original)
+                result = detect_document_manual(original, tuple(st.session_state.manual_points_original))
                 st.image(
                     cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
                     caption="Resultado manual",
@@ -664,6 +676,7 @@ if uploaded_files:
                     )
 
             except Exception as e:
-                st.error(f"Error: {e}")  
-st.markdown('<div class="footer-signature">By Alan Masoud</div>', unsafe_allow_html=True)
+                st.error(f"Error: {e}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
+st.markdown('<div class="footer-signature">By Alan Masoud</div>', unsafe_allow_html=True)
