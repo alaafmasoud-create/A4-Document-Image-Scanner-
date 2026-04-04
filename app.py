@@ -375,11 +375,11 @@ st.markdown("""
         max-width: 1200px;
     }
     .hero-box {
-        background: rgba(255,255,255,0.88);
-        border: 1px solid rgba(148,163,184,0.18);
+        background: rgba(255,255,255,0.92);
+        border: 1px solid rgba(59,130,246,0.16);
         border-radius: 22px;
         padding: 1.3rem 1.4rem;
-        box-shadow: 0 10px 30px rgba(15,23,42,0.08);
+        box-shadow: 0 12px 30px rgba(15,23,42,0.08);
         margin-bottom: 1rem;
         backdrop-filter: blur(6px);
     }
@@ -397,39 +397,62 @@ st.markdown("""
         margin-bottom: 0;
     }
     .section-card {
-        background: rgba(255,255,255,0.9);
-        border: 1px solid rgba(148,163,184,0.16);
+        background: rgba(255,255,255,0.94);
+        border: 1px solid rgba(59,130,246,0.14);
         border-radius: 20px;
         padding: 1rem 1rem 0.8rem 1rem;
-        box-shadow: 0 10px 24px rgba(15,23,42,0.05);
+        box-shadow: 0 12px 28px rgba(15,23,42,0.06);
         margin-bottom: 1rem;
     }
     .section-title {
         font-size: 1.05rem;
-        font-weight: 700;
+        font-weight: 800;
         color: #0f172a;
         margin-bottom: .2rem;
     }
     .section-note {
         font-size: .95rem;
-        color: #64748b;
+        color: #475569;
         margin-bottom: .65rem;
     }
-    .stButton > button, .stDownloadButton > button {
-        border-radius: 12px !important;
-        border: 1px solid #cbd5e1 !important;
-        min-height: 2.9rem;
-        font-weight: 600;
-        box-shadow: 0 4px 12px rgba(15,23,42,0.06);
+    .stButton > button {
+        border-radius: 14px !important;
+        border: none !important;
+        min-height: 3rem;
+        font-weight: 800 !important;
+        color: #ffffff !important;
+        background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
+        box-shadow: 0 10px 24px rgba(37,99,235,0.28) !important;
         transition: all .2s ease;
-        background: white;
     }
-    .stButton > button:hover, .stDownloadButton > button:hover {
-        border-color: #94a3b8 !important;
-        transform: translateY(-1px);
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 30px rgba(37,99,235,0.34) !important;
+        filter: brightness(1.03);
     }
-    .stFileUploader, div[data-baseweb="select"], .stRadio {
-        background: rgba(255,255,255,0.75);
+    .stButton > button:focus,
+    .stDownloadButton > button:focus,
+    div[data-baseweb="select"] *:focus {
+        outline: 3px solid rgba(59,130,246,0.25) !important;
+        outline-offset: 2px !important;
+    }
+    .stDownloadButton > button {
+        border-radius: 14px !important;
+        border: none !important;
+        min-height: 3rem;
+        font-weight: 800 !important;
+        color: #ffffff !important;
+        background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+        box-shadow: 0 10px 24px rgba(16,185,129,0.28) !important;
+        transition: all .2s ease;
+    }
+    .stDownloadButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 30px rgba(16,185,129,0.34) !important;
+        filter: brightness(1.03);
+    }
+    .stFileUploader, .stRadio {
+        background: rgba(255,255,255,0.82);
         border-radius: 16px;
         padding: .4rem .55rem;
     }
@@ -439,14 +462,38 @@ st.markdown("""
     }
     .stRadio [role="radiogroup"] label {
         background: linear-gradient(135deg, #ede9fe 0%, #dbeafe 100%);
-        border: 1px solid #c4b5fd;
+        border: 1px solid #a5b4fc;
         border-radius: 14px;
         padding: 0.45rem 0.95rem;
-        box-shadow: 0 4px 12px rgba(79,70,229,0.10);
+        box-shadow: 0 6px 14px rgba(79,70,229,0.12);
     }
     .stRadio [role="radiogroup"] label p {
         color: #312e81;
-        font-weight: 700;
+        font-weight: 800;
+    }
+    div[data-testid="stSelectbox"] {
+        background: linear-gradient(135deg, rgba(255,247,237,0.98) 0%, rgba(254,242,242,0.98) 100%);
+        border: 1px solid #fdba74;
+        border-radius: 18px;
+        padding: 0.6rem 0.7rem 0.75rem 0.7rem;
+        box-shadow: 0 10px 22px rgba(249,115,22,0.12);
+        margin-bottom: 0.9rem;
+    }
+    div[data-testid="stSelectbox"] label,
+    div[data-testid="stSelectbox"] label p {
+        color: #9a3412 !important;
+        font-weight: 800 !important;
+        font-size: 1rem !important;
+    }
+    div[data-testid="stSelectbox"] > div[data-baseweb="select"] {
+        background: rgba(255,255,255,0.92) !important;
+        border: 2px solid #fb923c !important;
+        border-radius: 14px !important;
+        box-shadow: 0 4px 14px rgba(249,115,22,0.10);
+    }
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+        color: #0f172a !important;
+        font-weight: 700 !important;
     }
     .footer-signature {
         text-align: center;
@@ -454,9 +501,9 @@ st.markdown("""
         padding-top: 0.8rem;
         color: #64748b;
         font-size: 0.72rem;
-        font-weight: 500;
-        opacity: 0.9;
-        }
+        font-weight: 600;
+        opacity: 0.95;
+    }
     .stFileUploader {
         border: 2px dashed #38bdf8;
         background: linear-gradient(135deg, rgba(224,242,254,0.9) 0%, rgba(240,249,255,0.96) 100%);
@@ -464,7 +511,7 @@ st.markdown("""
     }
     .stFileUploader label {
         color: #0f172a !important;
-        font-weight: 700;
+        font-weight: 800;
     }
     .stFileUploader section[data-testid="stFileUploaderDropzone"] {
         background: transparent;
@@ -488,13 +535,14 @@ st.markdown("""
     }
     .result-label {
         display: inline-block;
-        padding: .32rem .65rem;
+        padding: .36rem .75rem;
         border-radius: 999px;
-        background: #e0ecff;
+        background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
         color: #1d4ed8;
-        font-size: .83rem;
-        font-weight: 700;
-        margin-bottom: .5rem;
+        font-size: .84rem;
+        font-weight: 800;
+        margin-bottom: .55rem;
+        border: 1px solid #93c5fd;
     }
 </style>
 """, unsafe_allow_html=True)
